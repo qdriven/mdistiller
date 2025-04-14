@@ -5,7 +5,6 @@ import numpy as np
 import sys
 import time
 from tqdm import tqdm
-import shutil
 
 
 class AverageMeter(object):
@@ -94,18 +93,11 @@ def accuracy(output, target, topk=(1,)):
         return res
 
 
-def save_checkpoint(state, is_best=False, filename='checkpoint.pth'):
-    """Save checkpoint."""
-    os.makedirs(os.path.dirname(filename), exist_ok=True)
-    torch.save(state, filename)
-    if is_best:
-        shutil.copyfile(filename, os.path.join(os.path.dirname(filename), 'model_best.pth'))
+def save_checkpoint(obj, path):
+    with open(path, "wb") as f:
+        torch.save(obj, f)
 
 
-def load_checkpoint(fpath):
-    """Load checkpoint."""
-    if not os.path.exists(fpath):
-        raise FileNotFoundError(f"File '{fpath}' does not exist")
-    
-    checkpoint = torch.load(fpath)
-    return checkpoint
+def load_checkpoint(path):
+    with open(path, "rb") as f:
+        return torch.load(f, map_location="cpu")
