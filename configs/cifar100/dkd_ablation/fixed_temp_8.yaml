@@ -1,0 +1,38 @@
+EXPERIMENT:
+  NAME: ""
+  TAG: "dkd_fixed_t8,res32x4,res8x4"
+  PROJECT: "cifar100_ablation"
+
+DATASET:
+  TYPE: "cifar100"
+  NUM_WORKERS: 8
+  TEST_BATCH_SIZE: 64
+
+DISTILLER:
+  TYPE: "DKD"
+  TEACHER: "resnet32x4"
+  STUDENT: "resnet8x4"
+
+SOLVER:
+  BATCH_SIZE: 64
+  EPOCHS: 240
+  LR: 0.05
+  LR_DECAY_STAGES: [150, 180, 210]
+  LR_DECAY_RATE: 0.1
+  WEIGHT_DECAY: 0.0005
+  MOMENTUM: 0.9
+  TYPE: "SGD"
+  TRAINER: "base"
+
+LOG:
+  PRINT_FREQ: 100
+  SAVE_CHECKPOINT_FREQ: 40
+  PREFIX: "./output/ablation"
+  WANDB: false
+
+DKD:
+  CE_WEIGHT: 1.0
+  ALPHA: 1.0
+  BETA: 8.0
+  T: 8.0
+  WARMUP: 20 
