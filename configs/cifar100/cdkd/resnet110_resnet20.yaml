@@ -1,0 +1,36 @@
+EXPERIMENT:
+  NAME: ""
+  TAG: "cdkd_r110_r20"
+  PROJECT: "cifar100_baselines"
+
+DATASET:
+  TYPE: "cifar100"
+  NUM_WORKERS: 8
+  TEST_BATCH_SIZE: 64
+
+TRAIN:
+  BATCH_SIZE: 64
+  EPOCHS: 240
+  OPTIMIZER:
+    TYPE: "sgd"
+    LR: 0.05
+    WEIGHT_DECAY: 5e-4
+    MOMENTUM: 0.9
+  LR_SCHEDULER:
+    TYPE: "cosine"
+    MIN_LR: 0.0
+  WARMUP_EPOCHS: 0
+
+MODEL:
+  STUDENT: "resnet20"
+  TEACHER: "resnet110"
+  TEACHER_CHECKPOINT: "checkpoints/teachers/cifar100_resnet110_teacher.pth"
+
+DISTILLER:
+  TYPE: "CDKD"
+  CDKD:
+    CE_WEIGHT: 1.0
+    ALPHA: 1.0
+    BETA: 8.0
+    WARMUP: 30
+    TEMP_TYPE: "instance"  # "global" 或 "instance"

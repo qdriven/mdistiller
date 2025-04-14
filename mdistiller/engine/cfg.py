@@ -1,5 +1,8 @@
 from yacs.config import CfgNode as CN
 from .utils import log_msg
+import os
+import yaml
+from easydict import EasyDict
 
 
 def show_cfg(cfg):
@@ -14,23 +17,42 @@ def show_cfg(cfg):
     print(log_msg("CONFIG:\n{}".format(dump_cfg.dump()), "INFO"))
 
 
-CFG = CN()
+class Config:
+    def __init__(self):
+        self.EXPERIMENT = EasyDict()
+        self.DATASET = EasyDict()
+        self.TRAIN = EasyDict()
+        self.MODEL = EasyDict()
+        self.DISTILLER = EasyDict()
+
+    def merge_from_file(self, cfg_file):
+        with open(cfg_file, 'r') as f:
+            cfg_dict = yaml.safe_load(f)
+            self._merge_dict(self.__dict__, cfg_dict)
+
+    def _merge_dict(self, target_dict, src_dict):
+        for key, value in src_dict.items():
+            if key not in target_dict:
+                target_dict[key] = EasyDict()
+            if isinstance(value, dict):
+                self._merge_dict(target_dict[key], value)
+            else:
+                target_dict[key] = value
+
+CFG = Config()
 
 # Experiment
-CFG.EXPERIMENT = CN()
 CFG.EXPERIMENT.PROJECT = "distill"
 CFG.EXPERIMENT.NAME = ""
 CFG.EXPERIMENT.TAG = "default"
 
 # Dataset
-CFG.DATASET = CN()
 CFG.DATASET.TYPE = "cifar100"
 CFG.DATASET.NUM_WORKERS = 2
 CFG.DATASET.TEST = CN()
 CFG.DATASET.TEST.BATCH_SIZE = 64
 
 # Distiller
-CFG.DISTILLER = CN()
 CFG.DISTILLER.TYPE = "NONE"  # Vanilla as default
 CFG.DISTILLER.TEACHER = "ResNet50"
 CFG.DISTILLER.STUDENT = "resnet32"
