@@ -167,6 +167,11 @@ class BaseTrainer(object):
         loss = sum([l.mean() for l in losses_dict.values()])
         loss.backward()
         self.optimizer.step()
+        
+        # 更新温度参数 - 在主网络梯度计算完成后进行
+        if hasattr(self.distiller.module, 'update_temperature'):
+            self.distiller.module.update_temperature()
+        
         train_meters["training_time"].update(time.time() - train_start_time)
         # collect info
         batch_size = image.size(0)
@@ -360,6 +365,50 @@ class CRDDOT(BaseTrainer):
         batch_size = image.size(0)
         acc1, acc5 = accuracy(preds, target, topk=(1, 5))
         train_meters["losses"].update((loss_ce + loss_kd).cpu().detach().numpy().mean(), batch_size)
+        train_meters["top1"].update(acc1[0], batch_size)
+        train_meters["top5"].update(acc5[0], batch_size)
+        # print info
+        msg = "Epoch:{}| Time(data):{:.3f}| Time(train):{:.3f}| Loss:{:.4f}| Top-1:{:.3f}| Top-5:{:.3f}".format(
+            epoch,
+            train_meters["data_time"].avg,
+            train_meters["training_time"].avg,
+            train_meters["losses"].avg,
+            train_meters["top1"].avg,
+            train_meters["top5"].avg,
+        )
+        return msg
+
+
+class CTDKDTrainer(BaseTrainer):
+    """Trainer for Curriculum Temperature Decoupled Knowledge Distillation"""
+    
+    def train_iter(self, data, epoch, train_meters):
+        self.optimizer.zero_grad()
+        train_start_time = time.time()
+        image, target, index = data
+        train_meters["data_time"].update(time.time() - train_start_time)
+        image = image.float()
+        image = image.cuda(non_blocking=True)
+        target = target.cuda(non_blocking=True)
+        index = index.cuda(non_blocking=True)
+
+        # forward
+        preds, losses_dict = self.distiller(image=image, target=target, epoch=epoch)
+
+        # backward
+        loss = sum([l.mean() for l in losses_dict.values()])
+        loss.backward()
+        self.optimizer.step()
+        
+        # 更新温度参数 - 在主网络梯度计算完成后进行
+        if hasattr(self.distiller.module, 'update_temperature'):
+            self.distiller.module.update_temperature()
+        
+        train_meters["training_time"].update(time.time() - train_start_time)
+        # collect info
+        batch_size = image.size(0)
+        acc1, acc5 = accuracy(preds, target, topk=(1, 5))
+        train_meters["losses"].update(loss.cpu().detach().numpy().mean(), batch_size)
         train_meters["top1"].update(acc1[0], batch_size)
         train_meters["top5"].update(acc5[0], batch_size)
         # print info

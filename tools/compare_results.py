@@ -11,16 +11,49 @@ def load_results(log_file):
     accuracies = []
     losses = []
     
-    with open(log_file, 'r') as f:
-        for line in f:
-            try:
-                data = json.loads(line)
-                if 'epoch' in data and 'test_acc' in data:
-                    epochs.append(data['epoch'])
-                    accuracies.append(data['test_acc'])
-                    losses.append(data.get('test_loss', 0))
-            except:
-                continue
+    try:
+        with open(log_file, 'r') as f:
+            lines = f.readlines()
+            
+            current_epoch = None
+            current_test_acc = None
+            current_test_loss = None
+            
+            for line in lines:
+                line = line.strip()
+                
+                # 检查是否是 epoch 行
+                if line.startswith('epoch:'):
+                    if current_epoch is not None and current_test_acc is not None:
+                        epochs.append(current_epoch)
+                        accuracies.append(current_test_acc)
+                        losses.append(current_test_loss if current_test_loss is not None else 0)
+                    
+                    current_epoch = int(line.split(':')[1].strip())
+                    current_test_acc = None
+                    current_test_loss = None
+                
+                # 检查是否是 test_acc 行
+                elif line.startswith('test_acc:'):
+                    current_test_acc = float(line.split(':')[1].strip())
+                
+                # 检查是否是 test_loss 行
+                elif line.startswith('test_loss:'):
+                    current_test_loss = float(line.split(':')[1].strip())
+                
+                # 检查最后一个 epoch 数据
+                elif line == 'best_acc' and current_epoch is not None and current_test_acc is not None:
+                    epochs.append(current_epoch)
+                    accuracies.append(current_test_acc)
+                    losses.append(current_test_loss if current_test_loss is not None else 0)
+            
+            # 处理最后一个 epoch (如果日志没有以 'best_acc' 结束)
+            if current_epoch is not None and current_test_acc is not None:
+                epochs.append(current_epoch)
+                accuracies.append(current_test_acc)
+                losses.append(current_test_loss if current_test_loss is not None else 0)
+    except Exception as e:
+        print(f"Error loading log file {log_file}: {e}")
     
     return epochs, accuracies, losses
 
