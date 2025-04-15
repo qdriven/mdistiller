@@ -1,0 +1,42 @@
+experiment:
+  name: cifar100_wrn40_2_wrn16_2
+  tag: grlctdkd
+  project: cifar100_baselines
+  workspace: ""
+  save_dir: save/
+  device: gpu
+  ckpt_freq: 50
+
+distiller:
+  name: GRLCTDKD
+  T: 4.0
+  alpha: 0.5
+  beta: 8.0
+  gamma: 1.0
+  grl_weight: 0.1
+
+dataset:
+  name: cifar100
+  root: data
+  num_workers: 8
+
+model:
+  name: wrn
+  teacher:
+    depth: 40
+    width: 2
+    checkpoint: pretrained/wrn40_2_cifar100_acc76.58.pth
+  student:
+    depth: 16
+    width: 2
+    checkpoint: null
+
+solver:
+  batch_size: 64
+  epochs: 240
+  lr: 0.05
+  lr_decay_stages: [150, 180, 210]
+  lr_decay_rate: 0.1
+  weight_decay: 0.0005
+  momentum: 0.9
+  type: SGD 

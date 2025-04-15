@@ -178,6 +178,16 @@ CFG.CTDKD.MIN_TEMPERATURE = 1.0
 CFG.CTDKD.MAX_TEMPERATURE = 10.0
 CFG.CTDKD.LEARNING_RATE = 0.001
 
+# GRLCTDKD (CTKD with Gradient Reversal Layer) CFG
+CFG.GRLCTDKD = CN()
+CFG.GRLCTDKD.CE_WEIGHT = 1.0 # Inherited from DKD
+CFG.GRLCTDKD.ALPHA = 1.0    # Inherited from DKD
+CFG.GRLCTDKD.BETA = 8.0     # Inherited from DKD
+CFG.GRLCTDKD.WARMUP = 20    # Inherited from DKD
+CFG.GRLCTDKD.INIT_TEMPERATURE = 4.0 # Initial temperature for the learnable parameter
+CFG.GRLCTDKD.LEARNING_RATE = 0.01 # Learning rate for the temperature optimizer
+CFG.GRLCTDKD.GRL_LAMBDA = 0.1     # Lambda for the Gradient Reversal Layer (controls gradient scale)
+
 # DOT CFG
 CFG.SOLVER.DOT = CN()
 CFG.SOLVER.DOT.DELTA = 0.075

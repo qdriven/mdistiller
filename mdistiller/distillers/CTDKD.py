@@ -225,7 +225,13 @@ class CTDKD(DKD):
         log_dir = self.cfg.LOG.PREFIX
         os.makedirs(log_dir, exist_ok=True)
         
-        log_path = os.path.join(log_dir, 'temperature_log.json')
+        # 从日志目录中提取任务标识符（目录名）
+        task_id = os.path.basename(os.path.normpath(log_dir))
+        
+        # 使用任务标识符作为文件名后缀
+        log_filename = f'temperature_log_{task_id}.json'
+        log_path = os.path.join(log_dir, log_filename)
+        
         try:
             with open(log_path, 'w') as f:
                 json.dump(self.temp_log, f)

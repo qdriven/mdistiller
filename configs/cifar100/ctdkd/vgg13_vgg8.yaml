@@ -1,0 +1,40 @@
+experiment:
+  name: cifar100_vgg13_vgg8
+  tag: ctdkd
+  project: cifar100_baselines
+  workspace: ""
+  save_dir: save/
+  device: gpu
+  ckpt_freq: 50
+
+distiller:
+  name: CTDKD
+  T: 4.0
+  alpha: 0.5
+  beta: 0.5
+  gamma: 0.5
+  temperature: 4.0
+
+dataset:
+  name: cifar100
+  root: data
+  num_workers: 8
+
+model:
+  name: vgg
+  teacher:
+    depth: 13
+    checkpoint: pretrained/vgg13_cifar100.pth
+  student:
+    depth: 8
+    checkpoint: null
+
+solver:
+  batch_size: 64
+  epochs: 240
+  lr: 0.05
+  lr_decay_stages: [150, 180, 210]
+  lr_decay_rate: 0.1
+  weight_decay: 0.0005
+  momentum: 0.9
+  type: SGD 
