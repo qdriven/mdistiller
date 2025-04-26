@@ -1,19 +1,38 @@
-experiment:
-  name: cifar100_res56_res20
-  tag: grlctdkd
-  project: cifar100_baselines
-  workspace: ""
-  save_dir: save/
-  device: gpu
-  ckpt_freq: 50
+EXPERIMENT:
+  NAME: "cifar100_res56_res20"
+  TAG: "grlctdkd,res56,res20"
+  PROJECT: "cifar100_baselines"
+  WORKSPACE: ""
+  SAVE_DIR: "save/"
+  DEVICE: "gpu"
+  CKPT_FREQ: 50
 
-distiller:
-  name: GRLCTDKD
+DISTILLER:
+  TYPE: "GRLCTDKD"
+  TEACHER: "resnet56"
+  STUDENT: "resnet20"
+
+SOLVER:
+  BATCH_SIZE: 64
+  EPOCHS: 240
+  LR: 0.05
+  LR_DECAY_STAGES: [150, 180, 210]
+  LR_DECAY_RATE: 0.1
+  WEIGHT_DECAY: 0.0005
+  MOMENTUM: 0.9
+  TYPE: "SGD"
+
+GRLCTDKD:
+  INIT_TEMPERATURE: 4.0
+  GRL_LAMBDA: 0.1
+  LEARNING_RATE: 0.0001
+
+DKD:
+  CE_WEIGHT: 1.0
+  ALPHA: 1.0
+  BETA: 8.0
   T: 4.0
-  alpha: 0.5
-  beta: 8.0
-  gamma: 1.0
-  grl_weight: 0.1
+  WARMUP: 20
 
 dataset:
   name: cifar100

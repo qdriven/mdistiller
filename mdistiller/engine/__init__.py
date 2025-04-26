@@ -5,4 +5,5 @@ trainer_dict = {
     "dot": DOT,
     "crd_dot": CRDDOT,
     "ctdkd": CTDKDTrainer,
+    "grlctdkd": BaseTrainer,
 }

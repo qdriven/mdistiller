@@ -1,5 +1,5 @@
 EXPERIMENT:
-  NAME: ""
+  NAME: "cifar100_res32x4_res8x4"
   TAG: "dkd,res32x4,res8x4"
   PROJECT: "cifar100_baselines"
 DISTILLER:

@@ -160,15 +160,27 @@ def plot_temperature_curve(temp_data, save_path, title):
 def extract_task_id_from_filename(filename):
     """Extracts task ID and distiller type from filename."""
     basename = os.path.basename(filename)
+    
+    # 匹配新的命名格式: temperature_log_METHOD_MODEL.json
+    match_method_model = re.search(r'temperature_log_(\w+)_(.+?)\.json', basename)
+    if match_method_model:
+        method = match_method_model.group(1)
+        model = match_method_model.group(2)
+        return f"{model}", method
+    
+    # 匹配新的目录格式: temperature_log_METHOD_MODEL_ETC.json
     match_grl = re.search(r'temperature_log_GRL_(.+?)\.json', basename)
     if match_grl:
         return match_grl.group(1), "GRLCTDKD"
+        
+    # 匹配原始格式: temperature_log_TASKID.json
     match_ctdkd = re.search(r'temperature_log_(.+?)\.json', basename)
     if match_ctdkd:
-        # Avoid matching the GRL pattern again if filename is ambiguous
+        # 避免重复匹配 GRL 格式
         if f"GRL_{match_ctdkd.group(1)}" != os.path.splitext(basename)[0].replace("temperature_log_", ""):
              return match_ctdkd.group(1), "CTDKD"
-    # Fallback if no pattern matches or it's a worklog
+             
+    # 如果没有匹配到任何模式，或者是 worklog，则使用默认值
     return os.path.splitext(basename)[0], "unknown"
 
 def extract_task_id_from_path(path):

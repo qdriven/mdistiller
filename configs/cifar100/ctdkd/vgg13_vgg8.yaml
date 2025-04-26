@@ -1,19 +1,32 @@
-experiment:
-  name: cifar100_vgg13_vgg8
-  tag: ctdkd
-  project: cifar100_baselines
-  workspace: ""
-  save_dir: save/
-  device: gpu
-  ckpt_freq: 50
+EXPERIMENT:
+  NAME: "cifar100_vgg13_vgg8"
+  TAG: "ctdkd,vgg13,vgg8"
+  PROJECT: "cifar100_baselines"
+  WORKSPACE: ""
+  SAVE_DIR: "save/"
+  DEVICE: "gpu"
+  CKPT_FREQ: 50
 
-distiller:
-  name: CTDKD
-  T: 4.0
-  alpha: 0.5
-  beta: 0.5
-  gamma: 0.5
-  temperature: 4.0
+DISTILLER:
+  TYPE: "CTDKD"
+  TEACHER: "vgg13"
+  STUDENT: "vgg8"
+
+SOLVER:
+  BATCH_SIZE: 64
+  EPOCHS: 240
+  LR: 0.05
+  LR_DECAY_STAGES: [150, 180, 210]
+  LR_DECAY_RATE: 0.1
+  WEIGHT_DECAY: 0.0005
+  MOMENTUM: 0.9
+  TYPE: "SGD"
+
+CTDKD:
+  INIT_TEMPERATURE: 4.0
+  MIN_TEMPERATURE: 1.0
+  MAX_TEMPERATURE: 10.0
+  LEARNING_RATE: 0.0001
 
 dataset:
   name: cifar100

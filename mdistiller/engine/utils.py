@@ -20,6 +20,8 @@ class AverageMeter(object):
         self.count = 0
 
     def update(self, val, n=1):
+        if isinstance(val, torch.Tensor):
+            val = val.detach().cpu().item()
         self.val = val
         self.sum += val * n
         self.count += n
@@ -43,9 +45,9 @@ def validate(val_loader, distiller):
             loss = criterion(output, target)
             acc1, acc5 = accuracy(output, target, topk=(1, 5))
             batch_size = image.size(0)
-            losses.update(loss.cpu().detach().numpy().mean(), batch_size)
-            top1.update(acc1[0], batch_size)
-            top5.update(acc5[0], batch_size)
+            losses.update(loss.item(), batch_size)
+            top1.update(acc1[0].item(), batch_size)
+            top5.update(acc5[0].item(), batch_size)
 
             # measure elapsed time
             batch_time.update(time.time() - start_time)
@@ -89,7 +91,7 @@ def accuracy(output, target, topk=(1,)):
         res = []
         for k in topk:
             correct_k = correct[:k].reshape(-1).float().sum(0, keepdim=True)
-            res.append(correct_k.mul_(100.0 / batch_size))
+            res.append(correct_k.mul_(100.0 / batch_size).cpu())
         return res
 
 

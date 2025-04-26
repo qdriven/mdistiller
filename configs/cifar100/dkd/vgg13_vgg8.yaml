@@ -1,19 +1,17 @@
 EXPERIMENT:
-  NAME: cifar100_vgg13_vgg8
-  TAG: dkd
-  PROJECT: cifar100_baselines
+  NAME: "cifar100_vgg13_vgg8"
+  TAG: "dkd,vgg13,vgg8"
+  PROJECT: "cifar100_baselines"
   WORKSPACE: ""
-  SAVE_DIR: save/
-  DEVICE: gpu
+  SAVE_DIR: "save/"
+  DEVICE: "gpu"
   CKPT_FREQ: 50
+
 DISTILLER:
-  TYPE: DKD
-  TEACHER:
-    DEPTH: 13
-    CHECKPOINT: pretrained/vgg13_cifar100.pth
-  STUDENT:
-    DEPTH: 8
-    CHECKPOINT: null
+  TYPE: "DKD"
+  TEACHER: "vgg13"
+  STUDENT: "vgg8"
+
 SOLVER:
   BATCH_SIZE: 64
   EPOCHS: 240
@@ -23,5 +21,6 @@ SOLVER:
   WEIGHT_DECAY: 0.0005
   MOMENTUM: 0.9
   TYPE: "SGD"
+
 DKD:
   BETA: 8.0
