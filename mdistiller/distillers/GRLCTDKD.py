@@ -39,8 +39,11 @@ def stable_kd_loss(logits_student, logits_teacher, temperature, eps=1e-8):
     # 沿着类别维度求和，然后取批次平均值
     loss = loss.sum(dim=1).mean()
     
-    # 乘以温度的平方，并放大系数以产生更强的梯度
-    loss = loss * (temperature ** 2) * 8.0  # Increased from 5.0 to 8.0 for stronger optimization
+    # 添加温度正则化项
+    temp_reg = 0.01 * torch.abs(temperature - 4.0)  # 促使温度向合理值靠拢
+    
+    # 最终损失
+    loss = loss * (temperature ** 2) * 8.0 + temp_reg
     
     return loss
 
@@ -51,12 +54,12 @@ class GRLCTDKD(DKD):
         super(GRLCTDKD, self).__init__(student, teacher, cfg)
         self.cfg = cfg
         
-        # Default values
-        init_temp = 4.0
-        self.grl_lambda = 0.2
+        # 修改默认值
+        init_temp = 2.0  # 降低初始温度（原为4.0）
+        self.grl_lambda = 0.1  # 降低GRL强度（原为0.2）
         self.min_temp = 1.0
-        self.max_temp = 20.0
-        lr_temp = 0.0005
+        self.max_temp = 8.0  # 降低最大温度（原为20.0）
+        lr_temp = 0.0001  # 降低温度学习率（原为0.0005）
         
         # Read configuration
         try:
@@ -172,8 +175,19 @@ class GRLCTDKD(DKD):
                 
                 temp_with_grl = self.temp_module.grl(self.temp_module.global_t, lambda_factor)
                 
-                # Clamp temperature for stability
-                temp_clamped = torch.clamp(temp_with_grl, min=self.min_temp, max=self.max_temp)
+                # 基于训练进度动态调整最大温度
+                epoch = kwargs.get("epoch", 1)
+                current_max_temp = max(
+                    self.min_temp + 2.0,
+                    self.max_temp * (1.0 - epoch / self.cfg.TRAIN.EPOCHS)
+                )
+                
+                # 使用动态最大温度进行钳位
+                temp_clamped = torch.clamp(
+                    temp_with_grl,
+                    min=self.min_temp,
+                    max=current_max_temp
+                )
                 
                 # Create clones for stability
                 student_logits = logits_student.detach().clone()

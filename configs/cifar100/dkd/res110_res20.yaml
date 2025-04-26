@@ -1,11 +1,16 @@
 EXPERIMENT:
-  NAME: "dkd,res110,res20"
+  NAME: "cifar100_res110_res20"
   TAG: "dkd,res110,res20"
   PROJECT: "cifar100_baselines"
   WORKSPACE: ""
   SAVE_DIR: "save/"
   DEVICE: "gpu"
   CKPT_FREQ: 50
+
+DATASET:
+  TYPE: "cifar100"
+  NUM_WORKERS: 8
+  TEST_BATCH_SIZE: 64
 
 DISTILLER:
   TYPE: "DKD"
@@ -27,4 +32,10 @@ DKD:
   ALPHA: 1.0
   BETA: 8.0
   T: 4.0
-  WARMUP: 20 
+  WARMUP: 20
+
+LOG:
+  PRINT_FREQ: 100
+  SAVE_CHECKPOINT_FREQ: 40
+  PREFIX: "./output/dkd"
+  WANDB: false

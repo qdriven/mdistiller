@@ -117,7 +117,7 @@ class GlobalTemperature(nn.Module):
         # Apply gradient reversal - this will negate gradients during backward pass
         t_with_grl = self.grl(self.global_t, lambda_)
         
-        # Clamp temperature to reasonable range - prevents extreme values
-        clamped_t = torch.clamp(t_with_grl, min=0.1, max=20.0)
+        # 修改钳位范围，降低上限，提高下限
+        clamped_t = torch.clamp(t_with_grl, min=1.0, max=8.0)  # 原来是 0.1-20.0
         
         return clamped_t 
