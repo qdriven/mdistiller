@@ -5,6 +5,7 @@ from .tiny_imagenet import get_tinyimagenet_dataloader, get_tinyimagenet_dataloa
 
 def get_dataset(cfg):
     if cfg.DATASET.TYPE == "cifar100":
+        subset_size = getattr(cfg.DATASET, 'SUBSET_SIZE', None)
         if cfg.DISTILLER.TYPE == "CRD":
             train_loader, val_loader, num_data = get_cifar100_dataloaders_sample(
                 batch_size=cfg.SOLVER.BATCH_SIZE,
@@ -18,6 +19,7 @@ def get_dataset(cfg):
                 batch_size=cfg.SOLVER.BATCH_SIZE,
                 val_batch_size=cfg.DATASET.TEST.BATCH_SIZE,
                 num_workers=cfg.DATASET.NUM_WORKERS,
+                subset_size=subset_size
             )
         num_classes = 100
     elif cfg.DATASET.TYPE == "imagenet":

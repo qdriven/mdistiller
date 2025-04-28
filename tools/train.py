@@ -100,10 +100,26 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser("training for knowledge distillation.")
     parser.add_argument("--cfg", type=str, default="")
     parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--quick", action="store_true", help="启用快速实验模式")
     parser.add_argument("opts", default=None, nargs=argparse.REMAINDER)
 
     args = parser.parse_args()
     cfg.merge_from_file(args.cfg)
     cfg.merge_from_list(args.opts)
+
+    # ====== 新增：快速实验模式参数覆盖 ======
+    if args.quick:
+        print("==> Quick experiment mode enabled: epochs=10, batch_size=32, subset_size=1000")
+        if hasattr(cfg, "SOLVER"):
+            cfg.SOLVER.EPOCHS = 10
+            cfg.SOLVER.BATCH_SIZE = 32
+        if hasattr(cfg, "TRAIN"):
+            cfg.TRAIN.EPOCHS = 10
+            cfg.TRAIN.BATCH_SIZE = 32
+        if hasattr(cfg, "DATASET"):
+            cfg.DATASET.TEST_BATCH_SIZE = 32
+            cfg.DATASET.SUBSET_SIZE = 1000  # 你需要在数据集加载时支持这个参数
+    # ====== END ======
+
     cfg.freeze()
     main(cfg, args.resume, args.opts)

@@ -15,6 +15,12 @@ def get_data_folder():
 class CIFAR100Instance(datasets.CIFAR100):
     """CIFAR100Instance Dataset."""
 
+    def __init__(self, *args, subset_size=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        if subset_size is not None:
+            self.data = self.data[:subset_size]
+            self.targets = self.targets[:subset_size]
+
     def __getitem__(self, index):
         img, target = super().__getitem__(index)
         return img, target, index
@@ -136,12 +142,12 @@ def get_cifar100_test_transform():
     )
 
 
-def get_cifar100_dataloaders(batch_size, val_batch_size, num_workers):
+def get_cifar100_dataloaders(batch_size, val_batch_size, num_workers, subset_size=None):
     data_folder = get_data_folder()
     train_transform = get_cifar100_train_transform()
     test_transform = get_cifar100_test_transform()
     train_set = CIFAR100Instance(
-        root=data_folder, download=True, train=True, transform=train_transform
+        root=data_folder, download=True, train=True, transform=train_transform, subset_size=subset_size
     )
     num_data = len(train_set)
     test_set = datasets.CIFAR100(
