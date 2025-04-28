@@ -102,4 +102,5 @@ def save_checkpoint(obj, path):
 
 def load_checkpoint(path):
     with open(path, "rb") as f:
-        return torch.load(f, map_location="cpu")
+        torch.serialization.add_safe_globals([np.core.multiarray.scalar])
+        return torch.load(f, map_location="cpu", weights_only=False)

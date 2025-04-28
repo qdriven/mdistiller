@@ -118,7 +118,8 @@ if __name__ == "__main__":
             cfg.TRAIN.BATCH_SIZE = 32
         if hasattr(cfg, "DATASET"):
             cfg.DATASET.TEST_BATCH_SIZE = 32
-            cfg.DATASET.SUBSET_SIZE = 1000  # 你需要在数据集加载时支持这个参数
+            if not hasattr(cfg.DATASET, "SUBSET_SIZE"):
+                cfg.DATASET.SUBSET_SIZE = 1000  # 确保SUBSET_SIZE参数存在
     # ====== END ======
 
     cfg.freeze()
