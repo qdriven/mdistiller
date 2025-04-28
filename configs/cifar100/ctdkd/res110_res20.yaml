@@ -2,15 +2,16 @@ EXPERIMENT:
   NAME: "cifar100_res110_res20"
   TAG: "ctdkd,res110,res20"
   PROJECT: "cifar100_baselines"
-  WORKSPACE: ""
-  SAVE_DIR: "save/"
-  DEVICE: "gpu"
-  CKPT_FREQ: 50
+  # WORKSPACE: ""
+  # SAVE_DIR: "save/"
+  # DEVICE: "gpu"
+  # CKPT_FREQ: 50
 
 DATASET:
   TYPE: "cifar100"
   NUM_WORKERS: 8
   TEST_BATCH_SIZE: 64
+  SUBSET_SIZE: 1000
 
 DISTILLER:
   TYPE: "CTDKD"

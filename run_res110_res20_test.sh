@@ -8,9 +8,20 @@ python tools/test_res110_res20.py \
 # Test CTDKD with modified temperature
 python tools/test_res110_res20.py \
     --method ctdkd \
-    --cfg configs/cifar100/ctdkd/res110_res20.yaml
+    --cfg configs/cifar100/ctdkd/res110_res20.yaml 
 
 # Test GRLCTDKD with modified temperature
 python tools/test_res110_res20.py \
     --method grlctdkd \
     --cfg configs/cifar100/grlctdkd/res110_res20.yaml
+
+
+## run quick
+python tools/test_res110_res20.py \
+    --method ctdkd \
+    --cfg configs/cifar100/ctdkd/res110_res20.yaml --quick
+
+python tools/test_res110_res20.py \
+    --method grlctdkd \
+    --cfg configs/cifar100/grlctdkd/res110_res20.yaml --quick
+
