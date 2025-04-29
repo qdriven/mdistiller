@@ -1,3 +1,4 @@
+
 import os
 import time
 from tqdm import tqdm
@@ -65,57 +66,59 @@ class BaseTrainer(object):
         return optimizer
 
     def log(self, lr, epoch, log_dict):
-        # 检查是否有 nan 或 inf 值并处理
+        """统一的日志记录格式"""
+        # 准备日志数据
         sanitized_log_dict = {}
         for k, v in log_dict.items():
-            if isinstance(v, (int, float)) and (np.isnan(v) or np.isinf(v)):
-                print(f"Warning: {k} has value {v} which is NaN or Inf. Setting to 0.0")
-                sanitized_log_dict[k] = 0.0
-            elif isinstance(v, torch.Tensor):
-                # 确保张量在CPU上，并且是标量
-                if v.numel() == 1:
-                    sanitized_log_dict[k] = v.detach().cpu().item()
-                else:
-                    sanitized_log_dict[k] = v.detach().cpu().mean().item()
+            if isinstance(v, (int, float)):
+                sanitized_log_dict[k] = float(v)
             else:
                 sanitized_log_dict[k] = v
-        
+
         # tensorboard log
         for k, v in sanitized_log_dict.items():
-            # Optionally scale temp opt loss for better visualization
             if k == "train_loss_temp_opt": 
-                self.tf_writer.add_scalar(k, v * 100, epoch) # Scale by 100
+                self.tf_writer.add_scalar(k, v * 100, epoch)
             else:
                 self.tf_writer.add_scalar(k, v, epoch)
         self.tf_writer.flush()
+
         # wandb log
         if self.cfg.LOG.WANDB:
             import wandb
             wandb.log({"current lr": lr})
             wandb.log(sanitized_log_dict)
-        
-        # 仅当 test_acc 有效时更新 best_acc
-        if "test_acc" in sanitized_log_dict and not np.isnan(sanitized_log_dict["test_acc"]) and not np.isinf(sanitized_log_dict["test_acc"]):
+
+        # 更新最佳准确率
+        if "test_acc" in sanitized_log_dict and not np.isnan(sanitized_log_dict["test_acc"]):
             if sanitized_log_dict["test_acc"] > self.best_acc:
                 self.best_acc = sanitized_log_dict["test_acc"]
                 if self.cfg.LOG.WANDB:
                     wandb.run.summary["best_acc"] = self.best_acc
-        
-        # worklog.txt
+
+        # 统一的worklog.txt格式
         with open(os.path.join(self.log_path, "worklog.txt"), "a") as writer:
-            lines = [
-                "-" * 25 + os.linesep,
-                "epoch: {}".format(epoch) + os.linesep,
-                "lr: {:.2f}".format(float(lr)) + os.linesep,
+            writer.write("-" * 25 + os.linesep)
+            writer.write(f"epoch: {epoch}" + os.linesep)
+            writer.write(f"lr: {lr:.2f}" + os.linesep)
+            
+            # 按固定顺序写入关键指标
+            metrics_order = [
+                "train_acc", "train_loss", "test_acc", "test_acc_top5", 
+                "test_loss", "train_loss_temp_opt"
             ]
-            for k, v in sanitized_log_dict.items():
-                # 记录所有项目，不排除任何温度相关字段
-                if isinstance(v, (int, float)):
-                    lines.append("{}: {:.2f}".format(k, v) + os.linesep)
-                else:
-                    lines.append("{}: {}".format(k, v) + os.linesep)
-            lines.append("-" * 25 + os.linesep)
-            writer.writelines(lines)
+            
+            for metric in metrics_order:
+                if metric in sanitized_log_dict:
+                    writer.write(f"{metric}: {sanitized_log_dict[metric]:.2f}" + os.linesep)
+            
+            # 确保温度信息被记录
+            if "temperature" in sanitized_log_dict:
+                writer.write(f"temperature: {sanitized_log_dict['temperature']:.4f}" + os.linesep)
+            elif "current_temperature" in sanitized_log_dict:
+                writer.write(f"temperature: {sanitized_log_dict['current_temperature']:.4f}" + os.linesep)
+            
+            writer.write("-" * 25 + os.linesep)
 
     def train(self, resume=False):
         epoch = 1
@@ -149,11 +152,15 @@ class BaseTrainer(object):
             "losses": AverageMeter(), # Main loss
             "top1": AverageMeter(),
             "top5": AverageMeter(),
+            "temperature": AverageMeter(),  # 添加温度计量器
         }
         # Add meter for temperature optimization loss if applicable
         if self.temp_optimizer:
              train_meters["loss_temp_opt"] = AverageMeter()
              train_meters["temperature"] = AverageMeter()
+        # 添加温度监控
+        if hasattr(self.distiller.module, 'get_current_temperature'):
+            train_meters["temperature"] = AverageMeter()
              
         num_iter = len(self.train_loader)
         pbar = tqdm(range(num_iter))
@@ -177,21 +184,34 @@ class BaseTrainer(object):
         if isinstance(test_loss, torch.Tensor):
             test_loss = test_loss.item()
 
-        # log
+        # 获取当前温度
+        current_temp = None
+        if hasattr(self.distiller.module, 'get_current_temperature'):
+            current_temp = self.distiller.module.get_current_temperature()
+
+        # log - 确保只记录一次
         log_dict = OrderedDict(
             {
                 "train_acc": train_meters["top1"].avg,
-                "train_loss": train_meters["losses"].avg, # Log main loss
+                "train_loss": train_meters["losses"].avg,
                 "test_acc": test_acc,
                 "test_acc_top5": test_acc_top5,
                 "test_loss": test_loss,
             }
         )
-        # Add temp opt loss to log if applicable
+        
+        # 添加温度到日志
+        if current_temp is not None:
+            log_dict["temperature"] = current_temp
+        elif "temperature" in train_meters:
+            log_dict["temperature"] = train_meters["temperature"].avg
+
+        # 只在有温度优化器时添加温度相关的日志
         if self.temp_optimizer:
-             log_dict["train_loss_temp_opt"] = train_meters["loss_temp_opt"].avg
-             log_dict["temperature"] = train_meters["temperature"].avg
-             
+            log_dict["train_loss_temp_opt"] = train_meters["loss_temp_opt"].avg
+            if hasattr(self.distiller.module, 'get_current_temperature'):
+                log_dict["temperature"] = self.distiller.module.get_current_temperature()
+                
         self.log(lr, epoch, log_dict)
         # saving checkpoint
         state = {
@@ -227,22 +247,21 @@ class BaseTrainer(object):
     def train_iter(self, data, epoch, train_meters):
         self.optimizer.zero_grad()
         if self.temp_optimizer:
-             self.temp_optimizer.zero_grad()
+            self.temp_optimizer.zero_grad()
              
         train_start_time = time.time()
         # Adapt data unpacking based on loader format
         try:
             if len(data) == 2: # Standard image, target
-                 image, target = data
-            elif len(data) == 3: # Usually image, target, index (used by CRD, but index often ignored)
-                 image, target, _ = data
+                image, target = data
+            elif len(data) == 3: # Usually image, target, index
+                image, target, _ = data
             elif len(data) == 4: # Usually CRD sample: image, target, index, contrastive_idx
-                 image, target, _, _ = data
+                image, target, _, _ = data
             else:
-                 raise ValueError(f"Unexpected data format length: {len(data)}")
+                raise ValueError(f"Unexpected data format length: {len(data)}")
         except (ValueError, TypeError) as e:
             print(f"Error unpacking data: {e}. Data: {data}")
-            # Skip this iteration if data format is incorrect
             return "Error unpacking data"
             
         train_meters["data_time"].update(time.time() - train_start_time)
@@ -253,124 +272,69 @@ class BaseTrainer(object):
         # forward
         preds, losses_dict = self.distiller(image=image, target=target, epoch=epoch)
 
-        # Logging gradients state for temperature model
-        if hasattr(self.distiller.module, 'temp_module') and self.distiller.module.temp_module is not None:
-            temp_module = self.distiller.module.temp_module
-            if hasattr(temp_module, 'global_t'):
-                global_t = temp_module.global_t
-                print(f"[Before backward] global_t={global_t.item():.4f}, requires_grad={global_t.requires_grad}")
-                if global_t.grad is not None:
-                    print(f"global_t.grad={global_t.grad.item()}")
-
-        # backward for main optimizer
+        # Initialize loss_main
+        loss_main = 0.0
+        
+        # Calculate main loss, excluding temperature-related losses
         try:
-            loss_main = sum([l.mean() for k, l in losses_dict.items() if k not in ['loss_temp_opt', 'temperature']])
-            loss_main.backward(retain_graph=True if self.temp_optimizer else False)
-            self.optimizer.step()
+            main_losses = [l for k, l in losses_dict.items() 
+                         if k not in ['loss_temp_opt', 'temperature', 'current_temperature']]
+            if main_losses:
+                loss_main = sum(l.mean() if torch.is_tensor(l) else l for l in main_losses)
+                if not torch.is_tensor(loss_main):
+                    loss_main = torch.tensor(loss_main, device=image.device, requires_grad=True)
+                loss_main.backward(retain_graph=True if self.temp_optimizer else False)
+                self.optimizer.step()
         except Exception as e:
             print(f"Error in main backward pass: {e}")
-        
-        # backward for temperature optimizer (if applicable)
-        if self.temp_optimizer and 'loss_temp_opt' in losses_dict and losses_dict['loss_temp_opt'] is not None:
-            loss_temp = losses_dict['loss_temp_opt']
-            
-            # 重新查看损失信息，获取更详细的调试信息
-            print(f"[Temp opt] loss_temp type: {type(loss_temp)}, shape: {loss_temp.shape if hasattr(loss_temp, 'shape') else 'no shape'}")
-            print(f"[Temp opt] requires_grad: {loss_temp.requires_grad if hasattr(loss_temp, 'requires_grad') else 'no requires_grad attr'}")
-            
-            # Check if the tensor requires grad and has valid values
-            if torch.is_tensor(loss_temp) and loss_temp.requires_grad and not torch.isnan(loss_temp) and not torch.isinf(loss_temp):
-                try:
-                    print("[Temp opt] Calling backward() on temperature loss...")
-                    loss_temp.backward()
-                    
-                    # 检查梯度是否已经填充
-                    if hasattr(self.distiller.module, 'temp_module') and self.distiller.module.temp_module is not None:
-                        temp_module = self.distiller.module.temp_module
-                        if hasattr(temp_module, 'global_t'):
-                            global_t = temp_module.global_t
-                            if global_t.grad is not None:
-                                print(f"[After backward] global_t.grad={global_t.grad.item()}")
-                            else:
-                                print("[After backward] global_t.grad is None, gradients not flowing!")
-                                
-                    # 执行优化器步骤
-                    print("[Temp opt] Calling step() on temperature optimizer...")
-                    self.temp_optimizer.step()
-                    
-                    # 检查优化器步骤是否改变了全局温度
-                    if hasattr(self.distiller.module, 'temp_module') and self.distiller.module.temp_module is not None:
-                        temp_module = self.distiller.module.temp_module
-                        if hasattr(temp_module, 'global_t'):
-                            print(f"[After step] global_t={temp_module.global_t.item():.4f}")
-                            
-                except RuntimeError as e:
-                    print(f"Error in temperature optimization: {e}")
-                    print("Skipping temperature update for this iteration")
-            else:
-                # More detailed error reporting
-                if not torch.is_tensor(loss_temp):
-                    print(f"Warning: loss_temp_opt is not a tensor: {type(loss_temp)}")
-                elif not loss_temp.requires_grad:
-                    print(f"Warning: loss_temp_opt does not require gradients")
-                else:
-                    print(f"Warning: loss_temp_opt has invalid values: {loss_temp}")
-                print("Skipping temperature optimizer step")
+            return "Error in backward pass"
 
-        # Update temperature for the *other* CTDKD method (performance-gap based)
+        # Handle temperature optimization if applicable
+        if self.temp_optimizer and 'loss_temp_opt' in losses_dict:
+            loss_temp = losses_dict['loss_temp_opt']
+            if torch.is_tensor(loss_temp) and loss_temp.requires_grad:
+                try:
+                    loss_temp.backward()
+                    self.temp_optimizer.step()
+                except Exception as e:
+                    print(f"Error in temperature optimization: {e}")
+        # Update temperature for CTDKD method
         elif hasattr(self.distiller.module, 'update_temperature'):
             try:
                 print("[Temp update] Calling update_temperature()...")
                 self.distiller.module.update_temperature()
             except Exception as e:
                 print(f"Error in update_temperature: {e}")
-        
+
         train_meters["training_time"].update(time.time() - train_start_time)
+        
         # collect info
         batch_size = image.size(0)
         acc1, acc5 = accuracy(preds, target, topk=(1, 5))
         
-        # 确保 acc1 和 acc5 是 CPU 张量或标量
-        if isinstance(acc1[0], torch.Tensor):
-            acc1_val = acc1[0].detach().cpu().item()
+        # Ensure acc1 and acc5 are scalar values
+        acc1_val = acc1[0].item() if torch.is_tensor(acc1[0]) else acc1[0]
+        acc5_val = acc5[0].item() if torch.is_tensor(acc5[0]) else acc5[0]
+        
+        # Update meters
+        if torch.is_tensor(loss_main):
+            train_meters["losses"].update(loss_main.item(), batch_size)
         else:
-            acc1_val = acc1[0]
+            train_meters["losses"].update(float(loss_main), batch_size)
             
-        if isinstance(acc5[0], torch.Tensor):
-            acc5_val = acc5[0].detach().cpu().item()
-        else:
-            acc5_val = acc5[0]
-            
-        # Log main loss
-        train_meters["losses"].update(loss_main.item(), batch_size)
         train_meters["top1"].update(acc1_val, batch_size)
         train_meters["top5"].update(acc5_val, batch_size)
-        # Log temp opt loss if available and valid
-        if self.temp_optimizer and 'loss_temp_opt' in losses_dict and losses_dict['loss_temp_opt'] is not None:
+
+        # Log temperature-related metrics if available
+        if self.temp_optimizer and 'loss_temp_opt' in losses_dict:
             try:
-                loss_temp_val = losses_dict['loss_temp_opt'].item()
-                if not np.isnan(loss_temp_val) and not np.isinf(loss_temp_val):
+                loss_temp_val = losses_dict['loss_temp_opt'].item() if torch.is_tensor(losses_dict['loss_temp_opt']) else float(losses_dict['loss_temp_opt'])
+                if not (np.isnan(loss_temp_val) or np.isinf(loss_temp_val)):
                     train_meters["loss_temp_opt"].update(loss_temp_val, batch_size)
-                else:
-                    # Log a placeholder if the value is invalid
-                    train_meters["loss_temp_opt"].update(0, batch_size)
             except Exception as e:
                 print(f"Error logging temperature loss: {e}")
-                train_meters["loss_temp_opt"].update(0, batch_size)
-                
-        # Log temperature if available
-        if self.temp_optimizer and 'temperature' in losses_dict and losses_dict['temperature'] is not None:
-            try:
-                temp_val = losses_dict['temperature'].item()
-                if not np.isnan(temp_val) and not np.isinf(temp_val):
-                    train_meters["temperature"].update(temp_val, batch_size)
-                else:
-                    # Use default temperature if invalid
-                    train_meters["temperature"].update(4.0, batch_size)
-            except Exception as e:
-                print(f"Error logging temperature: {e}")
-                train_meters["temperature"].update(4.0, batch_size)
 
+        # print info
         msg = "Epoch:{}| Time(data):{:.3f}| Time(train):{:.3f}| Loss:{:.4f}| Top-1:{:.3f}| Top-5:{:.3f}".format(
             epoch,
             train_meters["data_time"].avg,
@@ -379,10 +343,6 @@ class BaseTrainer(object):
             train_meters["top1"].avg,
             train_meters["top5"].avg,
         )
-        if self.temp_optimizer:
-             temp_loss_avg = train_meters["loss_temp_opt"].avg
-             msg += "| Loss(TempOpt):{:.4f}".format(temp_loss_avg)
-             
         return msg
 
 

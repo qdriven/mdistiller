@@ -1,3 +1,4 @@
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -100,6 +101,10 @@ class GRLCTDKD(DKD):
             self.temp_module = None
             self.temp_optimizer = None
 
+        # 获取总训练轮数，如果配置中没有则使用默认值
+        self.total_epochs = getattr(cfg.SOLVER, 'EPOCHS', 200)  # 默认200轮
+        self.warmup = getattr(cfg.SOLVER, 'WARMUP', 5)  # 默认5轮warmup
+
         self.temp_log = []
         if self.temp_module:
             # Log initial temperature
@@ -123,27 +128,86 @@ class GRLCTDKD(DKD):
         with torch.no_grad():
             logits_teacher, _ = self.teacher(image)
 
-        # Clean inputs for stability
+        # 数值稳定性处理
         logits_student = torch.nan_to_num(logits_student, nan=0.0, posinf=1e5, neginf=-1e5)
         logits_teacher = torch.nan_to_num(logits_teacher, nan=0.0, posinf=1e5, neginf=-1e5)
 
-        # Get temperature
-        if self.temp_module:
-            # For main training loss - use a stable, clamped detached temperature
-            temperature = self.temp_module.global_t.detach().clone()
-            temperature = torch.clamp(temperature, min=self.min_temp, max=self.max_temp)
-            self.current_temperature = temperature.item()
-        else:
-            # Fallback to fixed temperature
-            temperature = torch.tensor(self.temperature).to(logits_student.device)
-
-        # Calculate losses
+        # 计算CE损失
         loss_ce = self.ce_loss_weight * F.cross_entropy(logits_student, target)
+
+        # 获取当前epoch，默认为1
+        epoch = kwargs.get("epoch", 1)
         
-        # Apply warmup to the KD loss
-        warmup_factor = min(kwargs.get("epoch", 1) / self.warmup, 1.0)
+        # 使用正确的配置路径计算进度
+        progress = epoch / self.total_epochs  # 使用初始化时存储的total_epochs
         
-        # Calculate KD loss with more stability
+        # 计算性能差距
+        with torch.no_grad():
+            student_ce = F.cross_entropy(logits_student, target)
+            teacher_ce = F.cross_entropy(logits_teacher, target)
+            perf_gap = torch.clamp(student_ce - teacher_ce, 0.0, 10.0) * self.gap_scale
+
+        # 动态调整GRL强度
+        current_grl_lambda = self.grl_lambda * (1.0 + progress)  # 随训练进度增加GRL强度
+
+        # 温度优化
+        if self.temp_module and self.step_count >= self.warmup_steps:
+            # 确保温度模块启用梯度
+            self.temp_module.global_t.requires_grad_(True)
+            
+            # 动态调整温度范围
+            current_max_temp = max(
+                self.min_temp + 2.0,
+                self.max_temp * (1.0 - 0.5 * progress)  # 随训练进度降低最大温度
+            )
+            current_min_temp = self.min_temp + progress  # 随训练进度提高最小温度
+            
+            # 计算目标温度
+            target_temp = current_min_temp + (current_max_temp - current_min_temp) * (perf_gap / 5.0)
+            
+            # 应用GRL并计算温度损失
+            temp_with_grl = self.temp_module.grl(self.temp_module.global_t, current_grl_lambda)
+            
+            # 使用改进的稳定KD损失
+            loss_temp_opt = stable_kd_loss(
+                logits_student.detach(),
+                logits_teacher.detach(),
+                temp_with_grl,
+            )
+            
+            # 添加温度约束损失
+            temp_constraint = 0.1 * torch.abs(temp_with_grl - target_temp)
+            loss_temp_opt = loss_temp_opt + temp_constraint
+
+            # 更新温度
+            if self.step_count % self.temp_update_freq == 0:
+                self.temp_optimizer.zero_grad()
+                loss_temp_opt.backward()
+                
+                # 梯度裁剪
+                torch.nn.utils.clip_grad_norm_([self.temp_module.global_t], 1.0)
+                
+                self.temp_optimizer.step()
+                
+                # 确保温度在有效范围内
+                with torch.no_grad():
+                    self.temp_module.global_t.copy_(
+                        torch.clamp(self.temp_module.global_t,
+                                  min=current_min_temp,
+                                  max=current_max_temp)
+                    )
+        else:
+            loss_temp_opt = torch.tensor(0.0, device=logits_student.device)
+
+        # 获取当前温度用于KD损失
+        temperature = (self.temp_module.global_t.detach() if self.temp_module 
+                      else torch.tensor(self.temperature).to(logits_student.device))
+        self.current_temperature = temperature.item()
+
+        # 应用warmup
+        warmup_factor = min(epoch / self.warmup, 1.0)
+        
+        # 计算KD损失
         loss_kd = warmup_factor * dkd_loss(
             logits_student,
             logits_teacher,
@@ -152,94 +216,23 @@ class GRLCTDKD(DKD):
             self.beta,
             temperature,
         )
-        
-        # Initialize temperature optimization loss
-        loss_temp_opt = torch.tensor(0.0, device=logits_student.device)
-        
-        # Only apply temperature optimization after warmup steps
-        if self.temp_module and self.step_count >= self.warmup_steps:
-            try:
-                # Make sure the global temperature requires gradients
-                if not self.temp_module.global_t.requires_grad:
-                    self.temp_module.global_t.requires_grad_(True)
-                
-                # Apply gradient reversal
-                lambda_factor = torch.tensor(self.grl_lambda, device=logits_student.device)
-                
-                # Change lambda over time for better convergence
-                # Gradually increase GRL strength with training steps
-                epoch = kwargs.get("epoch", 1)
-                if epoch > 150:
-                    # Increase GRL strength in later epochs
-                    lambda_factor = lambda_factor * 1.5
-                
-                temp_with_grl = self.temp_module.grl(self.temp_module.global_t, lambda_factor)
-                
-                # 基于训练进度动态调整最大温度
-                epoch = kwargs.get("epoch", 1)
-                current_max_temp = max(
-                    self.min_temp + 2.0,
-                    self.max_temp * (1.0 - epoch / self.cfg.TRAIN.EPOCHS)
-                )
-                
-                # 使用动态最大温度进行钳位
-                temp_clamped = torch.clamp(
-                    temp_with_grl,
-                    min=self.min_temp,
-                    max=current_max_temp
-                )
-                
-                # Create clones for stability
-                student_logits = logits_student.detach().clone()
-                teacher_logits = logits_teacher.detach().clone()
-                
-                # Calculate temperature optimization loss
-                loss_temp_opt = stable_kd_loss(
-                    student_logits,
-                    teacher_logits,
-                    temp_clamped,
-                )
-                
-                # Check for NaN/Inf
-                if not torch.isfinite(loss_temp_opt):
-                    print(f"Warning: Temperature loss is not finite, using simpler alternative")
-                    # Fallback: simple loss that pushes temperature towards optimal range
-                    # Optimal temp should increase over training
-                    optimal_temp = min(10.0 + 0.05 * epoch, self.max_temp)
-                    loss_temp_opt = 0.02 * torch.abs(temp_clamped - optimal_temp)
-            
-            except Exception as e:
-                print(f"Error in temperature optimization: {e}")
-                loss_temp_opt = torch.tensor(0.0, device=logits_student.device)
-        
-        # Log temperature periodically
-        if self.temp_module and self.step_count % 50 == 0:  # More frequent logging
-            current_temp = self.temp_module.global_t.item()
-            self.temp_log.append(current_temp)
-            print(f"Step {self.step_count}, Temperature: {current_temp:.4f}")
-            
-            # Log to worklog.txt
-            try:
-                if hasattr(self.cfg, 'LOG') and hasattr(self.cfg.LOG, 'PREFIX'):
-                    log_dir = self.cfg.LOG.PREFIX
-                    with open(os.path.join(log_dir, "worklog.txt"), "a") as f:
-                        f.write(f"Step {self.step_count}, Temperature: {current_temp:.4f}\n")
-            except Exception as e:
-                print(f"Error writing temperature to worklog: {e}")
-        
-        self.step_count += 1
 
-        # Save temperature to JSON file periodically
-        if self.temp_module and self.step_count % 250 == 0:  # More frequent saving
-            self._save_temp_log()
+        # 记录温度和性能差距
+        if self.step_count % 10 == 0:
+            if hasattr(self.cfg, 'LOG') and hasattr(self.cfg.LOG, 'PREFIX'):
+                with open(os.path.join(self.cfg.LOG.PREFIX, "worklog.txt"), "a") as f:
+                    f.write(f"[TEMP] Step={self.step_count}, T={temperature.item():.4f}, "
+                           f"Gap={perf_gap.item():.4f}, GRL={current_grl_lambda:.4f}\n")
+
+        self.step_count += 1
 
         losses_dict = {
             "loss_ce": loss_ce,
             "loss_kd": loss_kd,
             "loss_temp_opt": loss_temp_opt,
-            "temperature": torch.tensor(self.current_temperature).to(logits_student.device)
+            "current_temperature": self.current_temperature,
         }
-        
+
         return logits_student, losses_dict
 
     def _save_temp_log(self):
